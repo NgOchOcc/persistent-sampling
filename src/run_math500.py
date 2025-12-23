@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.persistent_smc import PersistentSMC
 from src.vllm_wrapper import VLLMGenerator
-from src.dataset_loaders import DatasetLoader, AnswerExtractor, load_math500, create_sample_math500
+from src.dataset_loaders import DatasetLoader, AnswerExtractor
 from src.evaluator import MathEvaluator
 import logging
 
@@ -162,7 +162,6 @@ def main():
         aggregation="majority_vote"
     )
 
-    logger.info(f"Starting evaluation on {len(formatted_problems)} problems...")
     results = evaluator.evaluate_dataset(
         problems=formatted_problems,
         dataset_name="MATH500",
@@ -171,7 +170,6 @@ def main():
         temperature=args.temperature
     )
 
-    logger.info(f"\nEvaluation complete! Results saved to {output_path}")
     logger.info(f"Final accuracy: {results['accuracy']:.2%}")
 
 if __name__ == "__main__":

@@ -1,21 +1,15 @@
-#!/usr/bin/env python3
-"""
-Run Persistent SMC evaluation on AIME24 dataset
-"""
-
 import sys
+import logging
 import argparse
 from pathlib import Path
 
-# Add src to path
+
+from src.persistent_smc import PersistentSMC
+from src.vllm_wrapper import VLLMGenerator
+from src.dataset_loaders import DatasetLoader, AnswerExtractor
+from src.evaluator import MathEvaluator
+
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
-
-from persistent_smc import PersistentSMC
-from vllm_wrapper import vLLMGenerator
-from dataset_loaders import load_aime24
-from evaluator import MathEvaluator
-import logging
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -25,13 +19,10 @@ logger = logging.getLogger(__name__)
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate Persistent SMC on AIME24")
-
-    # Dataset args
     parser.add_argument(
         "--data_path",
         type=str,
         default="data/aime24.json",
-        help="Path to AIME24 dataset"
     )
 
     # Model args
@@ -39,20 +30,18 @@ def main():
         "--model",
         type=str,
         default="Qwen/Qwen2.5-Math-7B-Instruct",
-        help="Model name from HuggingFace"
     )
     parser.add_argument(
         "--tensor_parallel_size",
         type=int,
         default=1,
-        help="Number of GPUs for tensor parallelism"
     )
 
     # SMC args
     parser.add_argument(
         "--N",
         type=int,
-        default=24,  # More particles for harder problems
+        default=24,
         help="Number of particles"
     )
     parser.add_argument(
@@ -123,8 +112,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    # Create output directory
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     output_path = Path(args.output_dir) / args.output_name
 
@@ -139,22 +126,12 @@ def main():
     logger.info(f"Output: {output_path}")
     logger.info("=" * 60)
 
-    # Load dataset
-    problems = load_aime24(args.data_path)
-
-    if not problems:
-        logger.error("No problems loaded. Exiting.")
-        return
-
-    # Initialize vLLM
-    logger.info("Initializing vLLM...")
-    llm_generator = vLLMGenerator(
+    problems = DatasetLoader.load_aime24(args.data_path)
+    llm_generator = VLLMGenerator(
         model_name=args.model,
         tensor_parallel_size=args.tensor_parallel_size
     )
 
-    # Initialize Persistent SMC solver
-    logger.info("Initializing Persistent SMC solver...")
     solver = PersistentSMC(
         llm_generator=llm_generator,
         N=args.N,
@@ -167,12 +144,9 @@ def main():
         verbose=True
     )
 
-    # Format problems with prompts
     formatted_problems = []
     for p in problems:
         problem_text = p['problem']
-
-        # AIME-specific system prompt
         system_prompt = (
             "You are a mathematical problem solver specializing in competition mathematics. "
             "Solve the following AIME problem step by step. "
@@ -190,14 +164,10 @@ def main():
             'answer': p['answer']
         })
 
-    # Initialize evaluator
-    logger.info("Initializing evaluator...")
     evaluator = MathEvaluator(
         solver=solver,
         answer_aggregation="majority_vote"
     )
-
-    # Run evaluation
     logger.info(f"Starting evaluation on {len(formatted_problems)} AIME problems...")
     results = evaluator.evaluate_dataset(
         problems=formatted_problems,
@@ -207,9 +177,7 @@ def main():
         temperature=args.temperature
     )
 
-    logger.info(f"\nEvaluation complete! Results saved to {output_path}")
     logger.info(f"Final accuracy: {results['accuracy']:.2%}")
-    logger.info(f"Correct: {results['correct_count']}/{results['num_problems']}")
 
 
 if __name__ == "__main__":

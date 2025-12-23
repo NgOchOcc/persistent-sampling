@@ -159,7 +159,11 @@ class PersistentSMC:
                 scores.append(0.0)
                 continue
 
-            avg_logprob = np.mean([max(d.values()) if d else -10.0 for d in p.logprobs])
+            # avg_logprob = np.mean([max(d.values()) if d else -10.0 for d in p.logprobs])
+            avg_logprob = np.mean([
+                max(lp.logprob for lp in d.values()) if d else -10.0
+                for d in p.logprobs
+            ])
             sc = -avg_logprob / np.log(self.llm.vocab_size)
             scores.append(sc)
             p.self_certainty = sc
