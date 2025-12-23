@@ -1,12 +1,12 @@
-from typing import List, Optional
 import logging
+
+from typing import List, Optional
 from vllm import LLM, SamplingParams
-from .persistent_smc import Particle
+from src.persistent_smc import Particle
 
 logger = logging.getLogger(__name__)
 
-
-class vLLMGenerator:
+class VLLMGenerator:
     def __init__(self, model_name: str = "Qwen/Qwen2.5-Math-7B-Instruct",
                  tensor_parallel_size: int = 1, **vllm_kwargs):
         logger.info(f"Loading {model_name}...")
@@ -22,7 +22,7 @@ class vLLMGenerator:
         self.tokenizer = self.llm.get_tokenizer()
         self.vocab_size = len(self.tokenizer)
         self.model_name = model_name
-        logger.info(f"Ready. Vocab size: {self.vocab_size}")
+        logger.info(f"Vocab size: {self.vocab_size}")
 
     def generate_batch(self, prompts: List[str], max_tokens: int = 100,
                       temperature: float = 0.8, top_p: float = 0.95,

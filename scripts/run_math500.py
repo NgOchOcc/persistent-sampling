@@ -1,19 +1,12 @@
-#!/usr/bin/env python3
-"""
-Run Persistent SMC evaluation on MATH500 dataset
-"""
-
 import sys
 import argparse
 from pathlib import Path
 
-# Add src to path
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from persistent_smc import PersistentSMC
-from vllm_wrapper import vLLMGenerator
-from dataset_loaders import load_math500, create_sample_math500
-from evaluator import MathEvaluator
+from src.persistent_smc import PersistentSMC
+from src.vllm_wrapper import VLLMGenerator
+from src.dataset_loaders import DatasetLoader, AnswerExtractor, load_math500, create_sample_math500
+from src.evaluator import MathEvaluator
 import logging
 
 logging.basicConfig(
@@ -31,24 +24,6 @@ def main():
         "--data_path",
         type=str,
         default="data/math500.json",
-        help="Path to MATH500 dataset"
-    )
-    parser.add_argument(
-        "--num_problems",
-        type=int,
-        default=None,
-        help="Number of problems to evaluate (default: all)"
-    )
-    parser.add_argument(
-        "--difficulty",
-        type=str,
-        default=None,
-        help="Filter by difficulty level (e.g., 'Level 5')"
-    )
-    parser.add_argument(
-        "--use_sample",
-        action="store_true",
-        help="Use sample data for testing"
     )
 
     # Model args
@@ -140,8 +115,6 @@ def main():
     )
 
     args = parser.parse_args()
-
-    # Create output directory
     Path(args.output_dir).mkdir(parents=True, exist_ok=True)
     output_path = Path(args.output_dir) / args.output_name
 
@@ -155,30 +128,12 @@ def main():
     logger.info(f"Output: {output_path}")
     logger.info("=" * 60)
 
-    # Load dataset
-    if args.use_sample:
-        logger.info("Using sample data for testing...")
-        problems = create_sample_math500()
-    else:
-        problems = load_math500(
-            args.data_path,
-            num_samples=args.num_problems,
-            difficulty_level=args.difficulty
-        )
-
-    if not problems:
-        logger.error("No problems loaded. Exiting.")
-        return
-
-    # Initialize vLLM
-    logger.info("Initializing vLLM...")
-    llm_generator = vLLMGenerator(
+    problems = DatasetLoader.load_math500(args.data_path)
+    llm_generator = VLLMGenerator(
         model_name=args.model,
         tensor_parallel_size=args.tensor_parallel_size
     )
 
-    # Initialize Persistent SMC solver
-    logger.info("Initializing Persistent SMC solver...")
     solver = PersistentSMC(
         llm_generator=llm_generator,
         N=args.N,
@@ -191,27 +146,22 @@ def main():
         verbose=True
     )
 
-    # Format problems with prompts
     formatted_problems = []
     for p in problems:
         problem_text = p['problem']
         formatted_prompt = llm_generator.format_math_prompt(problem_text)
-
         formatted_problems.append({
             'problem': formatted_prompt,
-            'answer': p.get('answer', extract_boxed_answer(p.get('solution', ''))),
+            'answer': p.get('answer', AnswerExtractor.boxed(p.get('solution', ''))),
             'level': p.get('level', 'Unknown'),
             'type': p.get('type', 'Unknown')
         })
 
-    # Initialize evaluator
-    logger.info("Initializing evaluator...")
     evaluator = MathEvaluator(
         solver=solver,
-        answer_aggregation="majority_vote"
+        aggregation="majority_vote"
     )
 
-    # Run evaluation
     logger.info(f"Starting evaluation on {len(formatted_problems)} problems...")
     results = evaluator.evaluate_dataset(
         problems=formatted_problems,
@@ -223,15 +173,6 @@ def main():
 
     logger.info(f"\nEvaluation complete! Results saved to {output_path}")
     logger.info(f"Final accuracy: {results['accuracy']:.2%}")
-
-
-def extract_boxed_answer(text):
-    """Helper to extract boxed answer"""
-    import re
-    pattern = r'\\boxed\{([^}]*)\}'
-    matches = re.findall(pattern, text)
-    return matches[-1] if matches else None
-
 
 if __name__ == "__main__":
     main()
