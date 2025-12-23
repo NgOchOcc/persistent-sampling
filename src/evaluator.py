@@ -34,18 +34,11 @@ class MathEvaluator:
         final_answer = self._aggregate(answers_with_scores)
         is_correct = self._check_correctness(final_answer, ground_truth, problem_type)
         all_answers = [a for a, _ in answers_with_scores]
-        pass_at_k = {
-            f"pass@{k}": self._check_pass_k(all_answers[:k], ground_truth, problem_type)
-            for k in [1, 2, 4, 8, 16] if k <= len(all_answers)
-        }
         return {
             'final_answer': str(final_answer) if final_answer else None,
             'ground_truth': str(ground_truth),
             'correct': is_correct,
-            'num_solutions': len(solutions),
             'unique_answers': len(set(all_answers)),
-            'all_answers': all_answers,
-            'pass_at_k': pass_at_k
         }
 
     def evaluate_dataset(self, problems: List[Dict], dataset_name: str = "math",
@@ -53,7 +46,10 @@ class MathEvaluator:
         results = []
         correct = 0
         problem_type = 'aime' if 'aime' in dataset_name.lower() else 'math'
-        logger.info(f"Evaluating {len(problems)} problems from {dataset_name}")
+
+        original_verbose = self.solver.cfg.get('verbose', False)
+        self.solver.cfg['verbose'] = False
+
         for i, prob in enumerate(tqdm(problems, desc=f"Evaluating {dataset_name}")):
             result = self.evaluate_problem(
                 prob['problem'],
@@ -71,15 +67,14 @@ class MathEvaluator:
             if save_path and (i + 1) % 10 == 0:
                 self._save_interim(results, correct, i + 1, save_path)
 
+        self.solver.cfg['verbose'] = original_verbose
         accuracy = correct / len(problems) if problems else 0.0
-        pass_at_k_metrics = self._compute_pass_k_metrics(results, problems)
         output = {
             'dataset': dataset_name,
             'num_problems': len(problems),
             'accuracy': accuracy,
             'correct_count': correct,
-            'pass_at_k': pass_at_k_metrics,
-            'avg_unique_answers': np.mean([r['unique_answers'] for r in results]),
+            'avg_unique_answers': np.mean([r['unique_answers'] for r in results]) if results else 0.0,
             'results': results,
             'solver_stats': self.solver.get_statistics()
         }
@@ -121,15 +116,6 @@ class MathEvaluator:
                 return False
         return AnswerExtractor.verify_equivalence(str(predicted), str(ground_truth))
 
-    def _check_pass_k(self, answers: List, ground_truth: str, problem_type: str) -> bool:
-        return any(self._check_correctness(ans, ground_truth, problem_type) for ans in answers)
-
-    def _compute_pass_k_metrics(self, results: List[Dict], problems: List[Dict]) -> Dict:
-        metrics = {}
-        for k in [1, 2, 4, 8, 16]:
-            count = sum(1 for r in results if r['pass_at_k'].get(f"pass@{k}", False))
-            metrics[f"pass@{k}"] = count / len(problems) if problems else 0.0
-        return metrics
 
     def _save_interim(self, results: List[Dict], correct: int, total: int, path: str):
         with open(path, 'w') as f:
@@ -146,11 +132,6 @@ class MathEvaluator:
         logger.info(f"{'='*60}")
         logger.info(f"Accuracy: {results['accuracy']:.2%} ({results['correct_count']}/{results['num_problems']})")
         logger.info(f"Avg unique answers: {results['avg_unique_answers']:.2f}")
-
-        logger.info("\nPass@k metrics:")
-        for k, v in results['pass_at_k'].items():
-            logger.info(f"  {k}: {v:.2%}")
-
         stats = results['solver_stats']
         if stats.get('resample_steps'):
             logger.info(f"\nResamples: {len(stats['resample_steps'])}")
