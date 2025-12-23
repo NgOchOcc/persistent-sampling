@@ -1,0 +1,29 @@
+# =====================
+# Python cache files
+# =====================
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# =====================
+# LaTeX files
+# =====================
+*.tex
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fdb_latexmk
+*.fls
+*.bbl
+*.blg
+
+# =====================
+# Editor / OS files (optional but recommended)
+# =====================
+.DS_Store
+.vscode/
+.idea/
