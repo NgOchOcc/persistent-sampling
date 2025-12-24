@@ -36,6 +36,12 @@ def main():
         type=int,
         default=1,
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=2,
+        help="Batch size for generation (AIME uses smaller batches due to complexity, default=2)"
+    )
 
     # SMC args
     parser.add_argument(
@@ -91,6 +97,12 @@ def main():
         help="Maximum generation steps"
     )
     parser.add_argument(
+        "--max_tokens",
+        type=int,
+        default=8192,
+        help="Maximum tokens per generation step (AIME needs more tokens for complex reasoning)"
+    )
+    parser.add_argument(
         "--temperature",
         type=float,
         default=0.8,
@@ -129,7 +141,8 @@ def main():
     problems = DatasetLoader.load_aime24(args.data_path)
     llm_generator = VLLMGenerator(
         model_name=args.model,
-        tensor_parallel_size=args.tensor_parallel_size
+        tensor_parallel_size=args.tensor_parallel_size,
+        batch_size=args.batch_size
     )
 
     solver = PersistentSMC(
@@ -174,6 +187,7 @@ def main():
         dataset_name="AIME24",
         save_path=str(output_path),
         max_steps=args.max_steps,
+        max_tokens=args.max_tokens,
         temperature=args.temperature
     )
 

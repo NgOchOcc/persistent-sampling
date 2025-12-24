@@ -55,7 +55,6 @@ class SlidingWindow:
         self.window = []
 
     def add(self, particles: List[Particle], weights: np.ndarray, t: int, N: int):
-        """Add and auto-trim window"""
         self.window.append({
             'particles': [p.copy() for p in particles],
             'weights': weights.copy(),
@@ -137,6 +136,10 @@ class PersistentSMC:
                 p.timestep = t
                 (results if p.finished else still_alive).append(p)
             particles = still_alive
+
+            if hasattr(self.llm, 'clear_cache'):
+                self.llm.clear_cache(aggressive=False)
+
             t += 1
 
         for p in particles:
@@ -160,11 +163,21 @@ class PersistentSMC:
                 scores.append(0.0)
                 continue
 
-            # avg_logprob = np.mean([max(d.values()) if d else -10.0 for d in p.logprobs])
-            avg_logprob = np.mean([
-                max(lp.logprob for lp in d.values()) if d else -10.0
-                for d in p.logprobs
-            ])
+            token_logprobs = []
+            for d in p.logprobs:
+                if not d:
+                    token_logprobs.append(-10.0)
+                    continue
+
+                values = list(d.values())
+                if not values:
+                    token_logprobs.append(-10.0)
+                    continue
+
+                max_lp = max(lp.logprob if hasattr(lp, 'logprob') else lp for lp in values)
+                token_logprobs.append(max_lp)
+
+            avg_logprob = np.mean(token_logprobs)
             sc = -avg_logprob / np.log(self.llm.vocab_size)
             scores.append(sc)
             p.self_certainty = sc
@@ -216,7 +229,6 @@ class PersistentSMC:
             else:
                 j += 1
 
-        # Handle edge case
         while len(resampled) < N:
             resampled.append(particles[-1].copy())
 

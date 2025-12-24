@@ -45,6 +45,12 @@ def main():
         default=1,
         help="Number of GPUs for tensor parallelism"
     )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=4,
+        help="Batch size for generation (smaller = less memory, default=4)"
+    )
 
     # SMC args
     parser.add_argument(
@@ -102,8 +108,8 @@ def main():
     parser.add_argument(
         "--max_tokens",
         type=int,
-        default=512,
-        help="Maximum tokens per generation step"
+        default=4096,
+        help="Maximum tokens per generation step (increased from 512 for better reasoning)"
     )
     parser.add_argument(
         "--temperature",
@@ -147,7 +153,8 @@ def main():
 
     llm_generator = VLLMGenerator(
         model_name=args.model,
-        tensor_parallel_size=args.tensor_parallel_size
+        tensor_parallel_size=args.tensor_parallel_size,
+        batch_size=args.batch_size
     )
 
     solver = PersistentSMC(
@@ -174,9 +181,14 @@ def main():
             problem_text,
             system_prompt=gsm8k_system_prompt
         )
+        # Extract the numerical answer from the full answer text (after ####)
+        raw_answer = p.get('answer', '')
+        # GSM8K format: "explanation #### numerical_answer"
+        ground_truth = AnswerExtractor.generic(raw_answer) if raw_answer else ''
+
         formatted_problems.append({
             'problem': formatted_prompt,
-            'answer': p.get('answer', AnswerExtractor.generic(p.get('solution', '')))
+            'answer': ground_truth
         })
 
     evaluator = MathEvaluator(
