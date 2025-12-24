@@ -106,8 +106,9 @@ class PersistentSMC:
         self.cfg.update(config)
         self.stats = {'ess': [], 'beta': [], 'n_alive': [], 'resamples': []}
 
-    def solve(self, prompt: str, max_steps: int = 50, temperature: float = 0.8) -> List[Particle]:
-        particles = self._initialize(prompt, temperature)
+    def solve(self, prompt: str, max_steps: int = 50, temperature: float = 0.8,
+              max_tokens: int = 100) -> List[Particle]:
+        particles = self._initialize(prompt, temperature, max_tokens)
         window = SlidingWindow(self.cfg['k_max'])
         results = []
         t, beta = 1, 0.0
@@ -130,7 +131,7 @@ class PersistentSMC:
                     window.clear()
                 self.stats['resamples'].append(t)
 
-            particles = self._generate_next(particles, temperature)
+            particles = self._generate_next(particles, temperature, max_tokens)
             still_alive = []
             for p in particles:
                 p.timestep = t
@@ -147,10 +148,10 @@ class PersistentSMC:
 
         return results
 
-    def _initialize(self, prompt: str, temp: float) -> List[Particle]:
+    def _initialize(self, prompt: str, temp: float, max_tokens: int = 100) -> List[Particle]:
         if self.cfg['verbose']:
             logger.info(f"Initializing {self.cfg['N']} particles...")
-        return self.llm.generate_batch([prompt] * self.cfg['N'], temperature=temp)
+        return self.llm.generate_batch([prompt] * self.cfg['N'], temperature=temp, max_tokens=max_tokens)
 
     def _compute_sc(self, particles: List[Particle]) -> np.ndarray:
         scores = []
@@ -221,9 +222,9 @@ class PersistentSMC:
 
         return resampled
 
-    def _generate_next(self, particles: List[Particle], temp: float) -> List[Particle]:
+    def _generate_next(self, particles: List[Particle], temp: float, max_tokens: int = 100) -> List[Particle]:
         prompts = [p.text for p in particles]
-        return self.llm.generate_batch(prompts, temperature=temp)
+        return self.llm.generate_batch(prompts, temperature=temp, max_tokens=max_tokens)
 
     def _log_step(self, t: int, N: int, ess: float, beta: float, sc: np.ndarray):
         self.stats['ess'].append(ess)

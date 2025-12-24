@@ -100,6 +100,12 @@ def main():
         help="Maximum generation steps"
     )
     parser.add_argument(
+        "--max_tokens",
+        type=int,
+        default=512,
+        help="Maximum tokens per generation step"
+    )
+    parser.add_argument(
         "--temperature",
         type=float,
         default=0.8,
@@ -183,6 +189,7 @@ def main():
         dataset_name="GSM8K",
         save_path=str(output_path),
         max_steps=args.max_steps,
+        max_tokens=args.max_tokens,
         temperature=args.temperature
     )
 
