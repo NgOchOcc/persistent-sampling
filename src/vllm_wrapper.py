@@ -161,12 +161,13 @@ class VLLMGenerator:
 
     def generate_batch(self, prompts: List[str], max_tokens: int = 100,
                       temperature: float = 0.8, top_p: float = 0.95,
-                      stop: Optional[List[str]] = None,
+                      stop: List[str] = [".\n\n"],
                       batch_size: Optional[int] = None) -> List[Particle]:
         if batch_size is None:
             batch_size = self.batch_size
 
-        stop = stop or ['####', '<|im_end|>', '<|endoftext|>']
+        # Step finish condition
+        stop = stop or ["####", "</s>", "<|im_end|>", "<|endoftext|>", "<|end▁of▁sentence|>", "<｜end▁of▁sentence｜>"]
         safe_prompts = []
         max_prompt_len = self.max_model_len - max_tokens - 100  # Reserve space for generation
 
@@ -184,7 +185,8 @@ class VLLMGenerator:
             stop=stop,
             logprobs=1,
             prompt_logprobs=None,  # Changed from 0 to None to avoid sampler issues
-            skip_special_tokens=True
+            skip_special_tokens=True,
+            include_stop_str_in_output = True, # Include .\n\n at the end of the output
         )
 
         all_particles = []
@@ -231,6 +233,9 @@ class VLLMGenerator:
 
                 if i + batch_size < len(safe_prompts):
                     self.clear_cache(aggressive=False)
+            # debug
+            # print(outputs[0].outputs[0].text)
+            # print(all_particles[0].finished)
 
             return all_particles
 
@@ -245,7 +250,7 @@ class VLLMGenerator:
                 Particle(
                     text=prompt,
                     logprobs=[],
-                    finished=True
+                    finished= self._is_finished(out.outputs[0])
                 )
                 for prompt in safe_prompts
             ]
@@ -274,13 +279,14 @@ class VLLMGenerator:
 
 
     def _is_finished(self, output) -> bool:
-        stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "<|end▁of▁sentence|>", "<｜end▁of▁sentence｜>"]
+        # Particles finish condition, NOT step finish condition
+        stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "<|endofsentence|>", "<｜endofsentence｜>"]
         return (
-            output.finish_reason == 'stop' or
-            # output.finish_reason == 'length' or  # Also stop at max length
+            # output.finish_reason == "stop" or
+            'boxed{' in output.text or 
             '####' in output.text or
-            any(stop_words in output.text for stop_word in stop_words) or
-            output.text.strip().endswith('####')  # Check if ends with answer marker
+            any(stop_word in output.text for stop_word in stop_words) or
+            output.text.strip().endswith('####')
         )
 
     def clear_cache(self, aggressive: bool = True):

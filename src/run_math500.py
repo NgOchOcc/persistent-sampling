@@ -96,7 +96,7 @@ def main():
     parser.add_argument(
         "--max_steps",
         type=int,
-        default=50,
+        default=128,
         help="Maximum generation steps"
     )
     parser.add_argument(

@@ -107,7 +107,7 @@ class PersistentSMC:
         self.cfg.update(config)
         self.stats = {'ess': [], 'beta': [], 'n_alive': [], 'resamples': []}
 
-    def solve(self, prompt: str, max_steps: int = 50, temperature: float = 0.8,
+    def solve(self, prompt: str, max_steps: int = 128, temperature: float = 0.8,
               max_tokens: int = 100) -> List[Particle]:
         particles = self._initialize(prompt, temperature, max_tokens)
         window = SlidingWindow(self.cfg['k_max'])
