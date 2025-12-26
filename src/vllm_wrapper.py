@@ -81,31 +81,61 @@ class VLLMGenerator:
             max_tokens=max_tokens,
             stop=stop,
             logprobs=1,
-            prompt_logprobs=0
+            prompt_logprobs=None,  # Changed from 0 to None to avoid sampler issues
+            skip_special_tokens=True
         )
 
         all_particles = []
         try:
             for i in range(0, len(safe_prompts), batch_size):
                 batch_prompts = safe_prompts[i:i + batch_size]
-                outputs = self.llm.generate(batch_prompts, params, use_tqdm=False)
-                for out in outputs:
-                    new_text = out.outputs[0].text
-                    full_text = out.prompt + new_text
 
-                    all_particles.append(Particle(
-                        text=full_text,
-                        logprobs=out.outputs[0].logprobs or [],
-                        finished=self._is_finished(out.outputs[0])
-                    ))
+                try:
+                    outputs = self.llm.generate(batch_prompts, params, use_tqdm=False)
+                    for out in outputs:
+                        new_text = out.outputs[0].text
+                        full_text = out.prompt + new_text
 
-                if i + batch_size < len(safe_prompts):  
+                        all_particles.append(Particle(
+                            text=full_text,
+                            logprobs=out.outputs[0].logprobs or [],
+                            finished=self._is_finished(out.outputs[0])
+                        ))
+                except AssertionError as ae:
+                    # Handle vLLM sampler assertion errors
+                    logger.warning(f"vLLM sampler assertion error in batch {i//batch_size}: {ae}")
+                    logger.warning(f"Retrying batch with adjusted parameters...")
+
+                    # Retry with simpler parameters
+                    fallback_params = SamplingParams(
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        stop=stop,
+                        logprobs=None,  # Disable logprobs for fallback
+                        prompt_logprobs=None
+                    )
+
+                    outputs = self.llm.generate(batch_prompts, fallback_params, use_tqdm=False)
+                    for out in outputs:
+                        new_text = out.outputs[0].text
+                        full_text = out.prompt + new_text
+
+                        all_particles.append(Particle(
+                            text=full_text,
+                            logprobs=[],  # Empty logprobs for fallback
+                            finished=self._is_finished(out.outputs[0])
+                        ))
+
+                if i + batch_size < len(safe_prompts):
                     self.clear_cache(aggressive=False)
 
             return all_particles
 
         except Exception as e:
             logger.error(f"vLLM generation failed: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
             # Clear cache on error
             self.clear_cache(aggressive=True)
             # Return empty particles on failure

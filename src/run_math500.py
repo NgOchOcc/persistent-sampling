@@ -30,7 +30,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2.5-Math-7B-Instruct",
+        default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         help="Model name from HuggingFace"
     )
     parser.add_argument(
@@ -42,7 +42,7 @@ def main():
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=4,
+        default=2,
         help="Batch size for generation (smaller = less memory, default=4)"
     )
 
@@ -56,13 +56,13 @@ def main():
     parser.add_argument(
         "--k_max",
         type=int,
-        default=10,
+        default=5,
         help="Maximum sliding window size"
     )
     parser.add_argument(
         "--tau",
         type=float,
-        default=0.33,
+        default=0.5,
         help="ESS threshold for resampling"
     )
     parser.add_argument(
@@ -81,13 +81,13 @@ def main():
     parser.add_argument(
         "--T_anneal",
         type=int,
-        default=20,
+        default=3,
         help="Annealing timescale"
     )
     parser.add_argument(
         "--transform_sc",
         type=str,
-        default="centering",
+        default="clipping",
         choices=["none", "centering", "clipping"],
         help="Self-certainty transformation"
     )
@@ -102,7 +102,7 @@ def main():
     parser.add_argument(
         "--max_tokens",
         type=int,
-        default=4096,
+        default=1024,
         help="Maximum tokens per generation step (increased from 512 for better reasoning)"
     )
     parser.add_argument(

@@ -36,7 +36,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        default="Qwen/Qwen2.5-Math-7B-Instruct",
+        default="deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B",
         help="Model name from HuggingFace"
     )
     parser.add_argument(
@@ -44,12 +44,6 @@ def main():
         type=int,
         default=1,
         help="Number of GPUs for tensor parallelism"
-    )
-    parser.add_argument(
-        "--batch_size",
-        type=int,
-        default=4,
-        help="Batch size for generation (smaller = less memory, default=4)"
     )
 
     # SMC args
@@ -62,7 +56,7 @@ def main():
     parser.add_argument(
         "--k_max",
         type=int,
-        default=10,
+        default=5,
         help="Maximum sliding window size"
     )
     parser.add_argument(
@@ -87,7 +81,7 @@ def main():
     parser.add_argument(
         "--T_anneal",
         type=int,
-        default=20,
+        default=2,
         help="Annealing timescale"
     )
     parser.add_argument(
@@ -108,7 +102,7 @@ def main():
     parser.add_argument(
         "--max_tokens",
         type=int,
-        default=4096,
+        default=1024,
         help="Maximum tokens per generation step (increased from 512 for better reasoning)"
     )
     parser.add_argument(
@@ -153,8 +147,7 @@ def main():
 
     llm_generator = VLLMGenerator(
         model_name=args.model,
-        tensor_parallel_size=args.tensor_parallel_size,
-        batch_size=args.batch_size
+        tensor_parallel_size=args.tensor_parallel_size
     )
 
     solver = PersistentSMC(

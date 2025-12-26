@@ -28,27 +28,16 @@ class MathEvaluator:
         solutions = self.solver.solve(problem, **solve_kwargs)
         extractor = self.extractors[problem_type]
 
-        # Extract answers and keep all solution texts
         answers_with_scores = [
             (extractor(sol.text), sol.self_certainty, sol.text)
             for sol in solutions
         ]
-        # Filter out None answers but keep the full text
         valid_answers = [(a, s, t) for a, s, t in answers_with_scores if a is not None]
-
-        # Separate for aggregation
         answers_scores_only = [(a, s) for a, s, _ in valid_answers]
-
         final_answer = self._aggregate(answers_scores_only)
         is_correct = self._check_correctness(final_answer, ground_truth, problem_type)
-
-        # All extracted answers
         all_answers = [a for a, _, _ in valid_answers]
-
-        # All solution texts (full content)
         all_solutions_text = [t for _, _, t in valid_answers]
-
-        # Compute pass@k
         pass_at_k = {
             f"pass@{k}": self._check_pass_k(all_answers[:k], ground_truth, problem_type)
             for k in [1, 2, 4, 8, 16, 32] if k <= len(all_answers)
@@ -88,12 +77,10 @@ class MathEvaluator:
             if result['correct']:
                 correct += 1
 
-            # Clear cache after each problem to prevent OOM
             if self.clear_cache_after_problem:
                 if hasattr(self.solver.llm, 'clear_cache'):
                     self.solver.llm.clear_cache(aggressive=True)
 
-            # Log memory stats every 10 problems
             if (i + 1) % 10 == 0:
                 if hasattr(self.solver.llm, 'get_memory_stats'):
                     mem_stats = self.solver.llm.get_memory_stats()
@@ -106,10 +93,7 @@ class MathEvaluator:
 
         self.solver.cfg['verbose'] = original_verbose
         accuracy = correct / len(problems) if problems else 0.0
-
-        # Compute pass@k metrics across all problems
         pass_at_k_metrics = self._compute_pass_k_metrics(results, problems)
-
         output = {
             'dataset': dataset_name,
             'num_problems': len(problems),
@@ -160,11 +144,9 @@ class MathEvaluator:
         return AnswerExtractor.verify_equivalence(str(predicted), str(ground_truth))
 
     def _check_pass_k(self, answers: List, ground_truth: str, problem_type: str) -> bool:
-        """Check if any answer in top-k is correct"""
         return any(self._check_correctness(ans, ground_truth, problem_type) for ans in answers)
 
     def _compute_pass_k_metrics(self, results: List[Dict], problems: List[Dict]) -> Dict:
-        """Compute pass@k metrics across all problems"""
         metrics = {}
         for k in [1, 2, 4, 8, 16, 32]:
             count = sum(1 for r in results if r['pass_at_k'].get(f"pass@{k}", False))
