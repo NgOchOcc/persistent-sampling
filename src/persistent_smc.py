@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import List, Dict, Tuple
 from dataclasses import dataclass, field
 
+from vllm import SamplingParams
 logger = logging.getLogger(__name__)
 
 
@@ -100,7 +101,8 @@ class PersistentSMC:
             'T_anneal': 20,
             'transform_sc': 'centering',
             'reset_after_resample': True,
-            'verbose': True
+            'verbose': True,
+            'delimiter': '.\n\n'
         }
         self.cfg.update(config)
         self.stats = {'ess': [], 'beta': [], 'n_alive': [], 'resamples': []}
@@ -154,7 +156,8 @@ class PersistentSMC:
     def _initialize(self, prompt: str, temp: float, max_tokens: int = 100) -> List[Particle]:
         if self.cfg['verbose']:
             logger.info(f"Initializing {self.cfg['N']} particles...")
-        return self.llm.generate_batch([prompt] * self.cfg['N'], temperature=temp, max_tokens=max_tokens)
+
+        return self.llm.generate_batch([prompt] * self.cfg['N'], temperature=temp, max_tokens=max_tokens, stop=[self.cfg['delimiter']])
 
     def _compute_sc(self, particles: List[Particle]) -> np.ndarray:
         scores = []
@@ -234,9 +237,9 @@ class PersistentSMC:
 
         return resampled
 
-    def _generate_next(self, particles: List[Particle], temp: float, max_tokens: int = 100) -> List[Particle]:
+    def _generate_next(self, particles: List[Particle], temp: float, max_tokens: int = 1024) -> List[Particle]:
         prompts = [p.text for p in particles]
-        return self.llm.generate_batch(prompts, temperature=temp, max_tokens=max_tokens)
+        return self.llm.generate_batch(prompts, temperature=temp, max_tokens=max_tokens, stop=[self.cfg['delimiter']])
 
     def _log_step(self, t: int, N: int, ess: float, beta: float, sc: np.ndarray):
         self.stats['ess'].append(ess)
