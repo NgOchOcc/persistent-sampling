@@ -274,12 +274,12 @@ class VLLMGenerator:
 
 
     def _is_finished(self, output) -> bool:
+        stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "<|end▁of▁sentence|>", "<｜end▁of▁sentence｜>"]
         return (
             output.finish_reason == 'stop' or
-            output.finish_reason == 'length' or  # Also stop at max length
+            # output.finish_reason == 'length' or  # Also stop at max length
             '####' in output.text or
-            '<|endoftext|>' in output.text or
-            '<|im_end|>' in output.text or
+            any(stop_words in output.text for stop_word in stop_words) or
             output.text.strip().endswith('####')  # Check if ends with answer marker
         )
 

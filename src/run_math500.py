@@ -102,7 +102,7 @@ def main():
     parser.add_argument(
         "--max_tokens",
         type=int,
-        default=8192,
+        default=2048,
         help="Maximum tokens per generation step (increased from 512 for better reasoning)"
     )
     parser.add_argument(
