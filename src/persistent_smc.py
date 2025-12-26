@@ -25,7 +25,7 @@ class Particle:
 class AnnealingSchedule:
     @staticmethod
     def linear(t: int, T: int) -> float:
-        return min(1.0, t / T)
+        return max(1.0, t / T)
 
     @staticmethod
     def power(t: int, T: int, gamma: float = 2.0) -> float:
@@ -120,6 +120,9 @@ class PersistentSMC:
             sc_scores = self._transform_sc(sc_scores)
             beta = self._compute_beta(t, beta, sc_scores, len(particles))
             weights = np.exp(beta * sc_scores)
+            print(beta)
+            print(sc_scores)
+            print(weights)
 
             window.add(particles, weights, t, len(particles))
             all_particles, all_weights = window.get_all()

@@ -74,7 +74,7 @@ def main():
     parser.add_argument(
         "--annealing",
         type=str,
-        default="ess_targeted",
+        default="linear",
         choices=["linear", "power", "saturating", "ess_targeted"],
         help="Annealing method"
     )
