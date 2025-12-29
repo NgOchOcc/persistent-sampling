@@ -61,8 +61,7 @@ class SlidingWindow:
             't': t
         })
 
-        k_t = self._compute_size(t, N)
-        while len(self.window) > k_t:
+        while len(self.window) > self.k_max:
             self.window.pop(0)
 
     def get_all(self) -> Tuple[List[Particle], np.ndarray]:
@@ -72,14 +71,6 @@ class SlidingWindow:
         particles = [p for entry in self.window for p in entry['particles']]
         weights = np.concatenate([entry['weights'] for entry in self.window])
         return particles, weights
-
-    def _compute_size(self, t: int, N: int) -> int:
-        sizes = {
-            "constant": lambda: self.k_max,
-            "time": lambda: min(self.k_max, t),
-            "N": lambda: min(self.k_max, int(np.ceil(2 * np.log(max(N, 1)))), t)
-        }
-        return sizes.get(self.adaptive, sizes["constant"])()
 
     def clear(self):
         self.window = []
@@ -100,13 +91,13 @@ class PersistentSMC:
             'T_anneal': 20,
             'transform_sc': 'centering',
             'reset_after_resample': True,
-            'verbose': True
+            'verbose': True,
+            'use_exp': False
         }
         self.cfg.update(config)
         self.stats = {'ess': [], 'beta': [], 'n_alive': [], 'resamples': []}
 
-    def solve(self, prompt: str, max_steps: int = 50, temperature: float = 0.8,
-              max_tokens: int = 100) -> List[Particle]:
+    def solve(self, prompt: str, max_steps: int = 50, temperature: float = 0.8, max_tokens: int = 512) -> List[Particle]:
         particles = self._initialize(prompt, temperature, max_tokens)
         window = SlidingWindow(self.cfg['k_max'])
         results = []
@@ -117,13 +108,13 @@ class PersistentSMC:
             sc_scores = self._compute_sc(particles)
             sc_scores = self._transform_sc(sc_scores)
             beta = self._compute_beta(t, beta, sc_scores, len(particles))
-            weights = np.exp(beta * sc_scores)
-
+            weights = np.exp(beta * sc_scores) if self.cfg['use_exp'] else beta * sc_scores
             window.add(particles, weights, t, len(particles))
             all_particles, all_weights = window.get_all()
             ess = self._compute_ess(all_weights)
             self._log_step(t, len(particles), ess, beta, sc_scores)
 
+            # resampling condition
             if ess < self.cfg['tau'] * len(particles):
                 particles = self._resample(all_particles, all_weights, len(particles))
                 if self.cfg['reset_after_resample']:
@@ -244,8 +235,7 @@ class PersistentSMC:
         self.stats['n_alive'].append(N)
 
         if self.cfg['verbose']:
-            logger.info(f"Step {t}: N={N}, ESS={ess:.1f} ({ess/N:.0%}), β={beta:.3f}, "
-                       f"SC={sc.mean():.2f}±{sc.std():.2f}")
+            logger.info(f"Step {t}: N={N}, ESS={ess:.1f} ({ess/N:.0%}), β={beta:.3f}, "f"SC={sc.mean():.2f}±{sc.std():.2f}")
 
     def get_statistics(self) -> Dict:
         return {

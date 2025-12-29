@@ -102,10 +102,6 @@ class VLLMGenerator:
                             finished=self._is_finished(out.outputs[0])
                         ))
                 except AssertionError as ae:
-                    # Handle vLLM sampler assertion errors
-                    logger.warning(f"vLLM sampler assertion error in batch {i//batch_size}: {ae}")
-                    logger.warning(f"Retrying batch with adjusted parameters...")
-
                     # Retry with simpler parameters
                     fallback_params = SamplingParams(
                         temperature=temperature,
@@ -136,9 +132,7 @@ class VLLMGenerator:
             logger.error(f"vLLM generation failed: {e}")
             import traceback
             logger.error(traceback.format_exc())
-            # Clear cache on error
             self.clear_cache(aggressive=True)
-            # Return empty particles on failure
             return [
                 Particle(
                     text=prompt,
