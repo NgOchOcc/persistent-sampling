@@ -1,6 +1,4 @@
-"""
-Evaluation script for PRM-based Particle Sampling on MATH-500 benchmark
-"""
+
 import argparse
 import json
 import re
@@ -257,14 +255,6 @@ if __name__ == "__main__":
 
 
 '''
-# SERVER mode (connect to running servers):
-python eval_math500.py \
-    --use_server \
-    --base_url http://localhost:8000 \
-    --prm_url http://localhost:8001 \
-    --model_path Qwen/Qwen2.5-7B \
-    --n_particles 8 \
-    --max_steps 20 \
 
 # OFFLINE mode (load models directly):
 python eval_math500.py \
