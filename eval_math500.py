@@ -1,11 +1,16 @@
+"""
+Evaluation script for PRM-based Particle Sampling on MATH-500 benchmark
+(vLLM direct mode - no server)
 
+GPU Layout (dùng device parameter):
+- PRM: GPU 0,1 với tp=2, device="cuda:0"
+- LLM: GPU 2,3 với tp=2, device="cuda:2"
+"""
 import argparse
 import json
-import re
 import logging
 from typing import Optional
 
-import datasets
 from tqdm import tqdm
 
 from particle_sampler import ParticleSampler, extract_boxed_answer
@@ -44,7 +49,7 @@ def verify_answer(response: str, ground_truth: str, use_math_verify: bool = True
 
 
 def evaluate_math500(
-    model_path: str = "Qwen/Qwen2.5-Math-7B-Instruct",
+    model_path: str = "Qwen/Qwen2.5-7B",
     prm_model_path: str = "Qwen/Qwen2.5-Math-PRM-7B",
     n_particles: int = 8,
     max_steps: int = 20,
@@ -52,9 +57,10 @@ def evaluate_math500(
     temperature: float = 0.7,
     num_samples: Optional[int] = None,
     output_file: str = "math500_results.jsonl",
-    tensor_parallel_size: int = 1,
-    prm_device: str = "cuda:0",
-    llm_gpu_ids: str = None,
+    gpu_memory_utilization: float = 0.9,
+    tensor_parallel_size: int = 2,
+    prm_device: str = "cuda:0",  # PRM dùng GPU 0,1
+    llm_device: str = "cuda:2",  # LLM dùng GPU 2,3
     # ESS params
     alpha: float = 0.5,
     beta: float = 1.0,
@@ -72,12 +78,14 @@ def evaluate_math500(
         logger.warning("math_verify not installed. Using simple string matching.")
         logger.info("Install with: pip install math-verify")
     
-    # Load MATH-500 dataset
+    # Load MATH-500 dataset from local JSON
     logger.info("Loading MATH-500 dataset...")
-    dataset = datasets.load_dataset("HuggingFaceH4/MATH-500", split="test")
+    math500_path = "/home/anhld48/Working/icml/sampling_tts/persistent-sampling/data/math500.json"
+    with open(math500_path, "r") as f:
+        dataset = json.load(f)
     
     if num_samples is not None:
-        dataset = dataset.select(range(min(num_samples, len(dataset))))
+        dataset = dataset[:min(num_samples, len(dataset))]
     
     logger.info(f"Total samples: {len(dataset)}")
     
@@ -86,6 +94,7 @@ def evaluate_math500(
     logger.info(f"Loading PRM: {prm_model_path}")
     logger.info(f"Config: n_particles={n_particles}, max_steps={max_steps}, "
                 f"alpha={alpha}, beta={beta}, rho={rho}")
+    logger.info(f"GPU config: prm_device={prm_device}, llm_device={llm_device}, tp={tensor_parallel_size}, mem={gpu_memory_utilization}")
     
     sampler = ParticleSampler(
         model_path=model_path,
@@ -94,9 +103,10 @@ def evaluate_math500(
         max_steps=max_steps,
         max_tokens_per_step=max_tokens_per_step,
         temperature=temperature,
+        gpu_memory_utilization=gpu_memory_utilization,
         tensor_parallel_size=tensor_parallel_size,
         prm_device=prm_device,
-        llm_gpu_ids=llm_gpu_ids,
+        llm_device=llm_device,
         alpha=alpha,
         beta=beta,
         rho=rho,
@@ -113,7 +123,7 @@ def evaluate_math500(
             # Format prompt
             prompt, query = sampler.format_prompt(problem)
             
-            # Generate response (no try/except to see actual error)
+            # Generate response
             result_dict = sampler.sample(prompt, query)
             response = result_dict["response"]
             particles_info = result_dict["particles"]
@@ -135,8 +145,8 @@ def evaluate_math500(
                 "response": response,
                 "pred_answer": pred_answer if pred_answer else "",
                 "is_correct": is_correct,
-                "particles": particles_info,  # All particles info
-                "resample_count": resample_count,  # Number of resamples
+                "particles": particles_info,
+                "resample_count": resample_count,
             }
             
             # Save incrementally
@@ -150,7 +160,7 @@ def evaluate_math500(
     # Final results
     final_acc = correct / total * 100
     print("\n" + "=" * 60)
-    print("MATH-500 Evaluation Results (PRM Particle Sampling)")
+    print("MATH-500 Evaluation Results (vLLM Direct Mode)")
     print("=" * 60)
     print(f"Model: {model_path}")
     print(f"PRM: {prm_model_path}")
@@ -170,23 +180,22 @@ def evaluate_math500(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="PRM Particle Sampling Evaluation on MATH-500"
+        description="vLLM PRM Particle Sampling Evaluation on MATH-500"
     )
     parser.add_argument(
         "--model_path", type=str, 
-        default="Qwen/Qwen2.5-Math-7B-Instruct",
-        help="Path to the LLM model"
+        default="Qwen/Qwen2.5-7B",
+        help="Model path"
     )
     parser.add_argument(
         "--prm_model_path", type=str,
         default="Qwen/Qwen2.5-Math-PRM-7B",
-        help="Path to the PRM model"
+        help="PRM model path"
     )
     parser.add_argument(
         "--n_particles", type=int, default=8,
         help="Number of particles"
     )
-
     parser.add_argument(
         "--max_steps", type=int, default=20,
         help="Maximum number of steps (T)"
@@ -208,16 +217,20 @@ if __name__ == "__main__":
         help="Output file path"
     )
     parser.add_argument(
-        "--tp", type=int, default=1,
-        help="Tensor parallel size (number of GPUs for LLM)"
+        "--gpu_mem", type=float, default=0.9,
+        help="GPU memory utilization per model"
+    )
+    parser.add_argument(
+        "--tp", type=int, default=2,
+        help="Tensor parallel size (2 = use 2 GPUs per model)"
     )
     parser.add_argument(
         "--prm_device", type=str, default="cuda:0",
-        help="Device for PRM model (e.g. 'cuda:0')"
+        help="Device for PRM (e.g., 'cuda:0' → uses GPU 0,1 with tp=2)"
     )
     parser.add_argument(
-        "--llm_gpu_ids", type=str, default=None,
-        help="GPU IDs for LLM (e.g. '1,2,3'). If not set, uses all available."
+        "--llm_device", type=str, default="cuda:2",
+        help="Device for LLM (e.g., 'cuda:2' → uses GPU 2,3 with tp=2)"
     )
     # ESS params
     parser.add_argument(
@@ -244,31 +257,32 @@ if __name__ == "__main__":
         temperature=args.temperature,
         num_samples=args.num_samples,
         output_file=args.output_file,
+        gpu_memory_utilization=args.gpu_mem,
         tensor_parallel_size=args.tp,
         prm_device=args.prm_device,
-        llm_gpu_ids=args.llm_gpu_ids,
+        llm_device=args.llm_device,
         alpha=args.alpha,
         beta=args.beta,
         rho=args.rho,
     )
 
 
-
 '''
+# GPU Layout: PRM on GPU 0,1 | LLM on GPU 2,3
 
-# OFFLINE mode (load models directly):
 python eval_math500.py \
-    --model_path Qwen/Qwen2.5-7B \
+    --model_path Qwen/Qwen2.5-7B-Instruct \
     --prm_model_path Qwen/Qwen2.5-Math-PRM-7B \
-    --n_particles 5 \
-    --max_steps 40 \
+    --n_particles 8 \
+    --max_steps 25 \
     --max_tokens_per_step 128 \
     --temperature 0.7 \
     --output_file math500_prm_results.jsonl \
     --prm_device cuda:0 \
-    --llm_gpu_ids 1,2 \
-    --tp 2 \
+    --llm_device cuda:1 \
+    --tp 1 \
+    --gpu_mem 0.9 \
     --alpha 0.2 \
     --beta 10.0 \
-    --rho 0.7
+    --rho 1
 '''
