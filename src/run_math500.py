@@ -50,7 +50,7 @@ def main():
     parser.add_argument(
         "--N",
         type=int,
-        default=16,
+        default=8,
         help="Number of particles"
     )
     parser.add_argument(
@@ -96,13 +96,13 @@ def main():
     parser.add_argument(
         "--max_steps",
         type=int,
-        default=50,
+        default=128,
         help="Maximum generation steps"
     )
     parser.add_argument(
         "--max_tokens",
         type=int,
-        default=1024,
+        default=2048,
         help="Maximum tokens per generation step (increased from 512 for better reasoning)"
     )
     parser.add_argument(

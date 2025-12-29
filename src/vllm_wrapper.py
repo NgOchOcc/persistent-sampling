@@ -8,6 +8,108 @@ from src.persistent_smc import Particle
 
 logger = logging.getLogger(__name__)
 
+PROMPT_TEMPLATES = {
+    "direct": ("Question: {input}\nAnswer: ", "{output}", "\n\n"),
+    "cot": ("Question: {input}\nAnswer: ", "{output}", "\n\n\n"),
+    "pal": ("Question: {input}\n\n", "{output}", "\n---\n"),
+    "tool-integrated": ("Question: {input}\n\nSolution:\n", "{output}", "\n---\n"),
+    "self-instruct": ("<|user|>\n{input}\n<|assistant|>\n", "{output}", "\n"),
+    "tora": ("<|user|>\n{input}\n<|assistant|>\n", "{output}", "\n"),
+    "wizard_zs": (
+        "### Instruction:\n{input}\n\n### Response: Let's think step by step.",
+        "{output}",
+        "\n\n\n",
+    ),
+    "platypus_fs": (
+        "### Instruction:\n{input}\n\n### Response:\n",
+        "{output}",
+        "\n\n\n",
+    ),
+    "deepseek-math": (
+        "User: {input}\nPlease reason step by step, "
+        "and put your final answer within \\boxed{{}}.\n\nAssistant:",
+        "{output}",
+        "\n\n\n",
+    ),
+    "kpmath": (
+        "User: Please reason step by step and put your final answer at the end "
+        'with "The answer is: ".\n\n{input}\n\nAssistant:',
+        "{output}",
+    ),
+    "jiuzhang": (
+        "## Question\n{input}\n\n## Solution\n",
+        "{output}",
+        "\n\n\n",
+    ),
+    "jiuzhang_tora": (
+        "## Question\n{input}\n\n## Code Solution\n",
+        "{output}",
+        "\n\n\n",
+    ),
+    "jiuzhang_nl": (
+        "## Question\n{input}\n\n## Natural Language Solution\n",
+        "{output}",
+        "\n\n\n",
+    ),
+    "mmiqc": (
+        'Please solve the following problem and put your answer at the end with "The answer is: ".\n\n{input}\n\n',
+        "{output}",
+        "\n\n\n",
+    ),
+    "abel": (
+        "Question:\n{input}\nAnswer:\nLet's think step by step.\n",
+        "{output}",
+        "\n\n",
+    ),
+    "shepherd": ("{input}\n", "{output}", "\n\n\n"),
+    "qwen-boxed": (
+        "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n"
+        "<|im_start|>user\n{input}\nPlease reason step by step, and put your final answer within \\boxed{{}}.<|im_end|>\n"
+        "<|im_start|>assistant\n",
+        "{output}",
+        "\n\n",
+    ),
+    "qwen25-math-cot": (
+        "<|im_start|>system\nPlease reason step by step, and put your final answer within \\boxed{{}}.<|im_end|>\n"
+        "<|im_start|>user\n{input}<|im_end|>\n"
+        "<|im_start|>assistant\n",
+        "{output}",
+        "\n\n",
+    ),
+    "qwen25-math-cot-cod": (
+        "<|im_start|>system\nThink step by step, but only keep a minimum draft for each thinking step, with 5 words at most, and put your final answer within \\boxed{{}}.<|im_end|>\n"
+        "<|im_start|>user\n{input}<|im_end|>\n"
+        "<|im_start|>assistant\n",
+        "{output}",
+        "\n\n",
+    ),
+    "mathstral": (
+        "{input}\nPlease reason step by step, and put your final answer within \\boxed{{}}.",
+        "{output}",
+        "\n\n",
+    ),
+    "mathstral_cod": (
+        "{input}\nThink step by step, but only keep a minimum draft for each thinking step, with 5 words at most, and put your final answer within \\boxed{{}}.",
+        "{output}",
+        "\n\n",
+    ),
+    "internlm-math-fs": ("Question:{input}\nAnswer:", "{output}", "\n"),
+    "internlm-math-chat": (
+        "<|im_start|>user\n{input}<|im_end|>\n" "<|im_start|>assistant\n",
+        "{output}",
+        "\n\n",
+    ),
+    "mistral": (
+        "[INST] {input}[/INST]",
+        "{output}",
+        "\n\n",
+    ),
+    "numina": ("### Problem: {input}\n### Solution:", " {output}", "\n\n"),
+}
+
+
+
+
 class VLLMGenerator:
     MODEL_MAX_LENGTHS = {
         'Qwen/Qwen2.5-Math-7B-Instruct': 131072, 
@@ -59,12 +161,13 @@ class VLLMGenerator:
 
     def generate_batch(self, prompts: List[str], max_tokens: int = 100,
                       temperature: float = 0.8, top_p: float = 0.95,
-                      stop: Optional[List[str]] = None,
+                      stop: List[str] = [".\n\n"],
                       batch_size: Optional[int] = None) -> List[Particle]:
         if batch_size is None:
             batch_size = self.batch_size
 
-        stop = stop or ['####', '<|im_end|>', '<|endoftext|>']
+        # Step finish condition
+        stop = stop or ["####", "</s>", "<|im_end|>", "<|endoftext|>", "<|end▁of▁sentence|>", "<｜end▁of▁sentence｜>"]
         safe_prompts = []
         max_prompt_len = self.max_model_len - max_tokens - 100  # Reserve space for generation
 
@@ -82,7 +185,8 @@ class VLLMGenerator:
             stop=stop,
             logprobs=1,
             prompt_logprobs=None,  # Changed from 0 to None to avoid sampler issues
-            skip_special_tokens=True
+            skip_special_tokens=True,
+            include_stop_str_in_output = True, # Include .\n\n at the end of the output
         )
 
         all_particles = []
@@ -125,6 +229,9 @@ class VLLMGenerator:
 
                 if i + batch_size < len(safe_prompts):
                     self.clear_cache(aggressive=False)
+            # debug
+            # print(outputs[0].outputs[0].text)
+            # print(all_particles[0].finished)
 
             return all_particles
 
@@ -137,36 +244,43 @@ class VLLMGenerator:
                 Particle(
                     text=prompt,
                     logprobs=[],
-                    finished=True
+                    finished= self._is_finished(out.outputs[0])
                 )
                 for prompt in safe_prompts
             ]
 
-    def format_math_prompt(self, problem: str, system_prompt: Optional[str] = None) -> str:
-        system_prompt = system_prompt or (
-            "You are a mathematical problem solver. "
-            "Solve step by step and end with #### followed by the answer."
-        )
+    def format_math_prompt(self, problem: str, prompt_template: str = "mathstral", system_prompt: Optional[str] = None) -> str:
+        # system_prompt = system_prompt or (
+        #     "You are a mathematical problem solver. "
+        #     "Solve step by step and end with #### followed by the answer."
+        # )
 
-        if hasattr(self.tokenizer, 'apply_chat_template'):
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": problem}
-            ]
-            return self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
+        # if hasattr(self.tokenizer, 'apply_chat_template'):
+        #     messages = [
+        #         {"role": "system", "content": system_prompt},
+        #         {"role": "user", "content": problem}
+        #     ]
+        #     return self.tokenizer.apply_chat_template(
+        #         messages, tokenize=False, add_generation_prompt=True
+        #     )
 
-        return f"{system_prompt}\n\nProblem: {problem}\n\nSolution: Let's solve step by step.\n"
+        # return f"{system_prompt}\n\nProblem: {problem}\n\nSolution: Let's solve step by step.\n"
+
+        prompt_template = PROMPT_TEMPLATES[prompt_template]
+        input_template, output_template, splitter = prompt_template
+        full_prompt = input_template.format(input= problem)
+        return full_prompt.strip(" ") 
+
 
     def _is_finished(self, output) -> bool:
+        # Particles finish condition, NOT step finish condition
+        stop_words = ["</s>", "<|im_end|>", "<|endoftext|>", "<|endofsentence|>", "<｜endofsentence｜>"]
         return (
-            output.finish_reason == 'stop' or
-            output.finish_reason == 'length' or  # Also stop at max length
+            # output.finish_reason == "stop" or
+            'boxed{' in output.text or 
             '####' in output.text or
-            '<|endoftext|>' in output.text or
-            '<|im_end|>' in output.text or
-            output.text.strip().endswith('####')  # Check if ends with answer marker
+            any(stop_word in output.text for stop_word in stop_words) or
+            output.text.strip().endswith('####')
         )
 
     def clear_cache(self, aggressive: bool = True):
