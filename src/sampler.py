@@ -3,9 +3,9 @@ import numpy as np
 from typing import List, Tuple, Optional
 from collections import Counter
 
-from .models import Particle, Snapshot
-from .scorers import BaseScorer
-from .evaluator import extract_boxed_answer
+from src.models import Particle, Snapshot
+from src.scorers import BaseScorer
+from src.evaluator import extract_boxed_answer
 
 logger = logging.getLogger(__name__)
 
