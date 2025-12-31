@@ -139,8 +139,8 @@ class ParticleSampler:
             weighted_scores.append(f"{weighted_score:.3f}")
             alive_idx += 1
 
-        logger.info(f"  Base scores: {raw_scores}")
-        logger.info(f"  Weighted: {weighted_scores}")
+        # logger.info(f"  Base scores: {raw_scores}")
+        # logger.info(f"  Weighted: {weighted_scores}")
 
         return particles
 
@@ -180,8 +180,8 @@ class ParticleSampler:
         sorted_pool = sorted(snapshot_pool, key=lambda x: x.score, reverse=True)
         selected = sorted_pool[:n_select]
 
-        logger.info(f"  Pool size: {len(snapshot_pool)}")
-        logger.info(f"  Selected: {[(s.particle_id, s.step, f'{s.score:.4f}') for s in selected]}")
+        # logger.info(f"  Pool size: {len(snapshot_pool)}")
+        # logger.info(f"  Selected: {[(s.particle_id, s.step, f'{s.score:.4f}') for s in selected]}")
 
         new_particles = []
         new_pool = []
@@ -209,7 +209,7 @@ class ParticleSampler:
                 log_prob=selected_snap.log_prob
             ))
 
-        logger.info(f"  Created {len(new_particles)} particles, pool size: {len(new_pool)}")
+        # logger.info(f"  Created {len(new_particles)} particles, pool size: {len(new_pool)}")
         return new_particles, new_pool
 
     def _majority_vote(self, particles: List[Particle]) -> Tuple[str, str]:
@@ -287,7 +287,7 @@ class ParticleSampler:
             ))
 
         n_alive_init = sum(1 for p in particles if p.alive)
-        logger.info(f"Initial: {len(particles)} particles, {n_alive_init} alive")
+        # logger.info(f"Initial: {len(particles)} particles, {n_alive_init} alive")
         particles = self._score_particles(particles, query)
         for p in particles:
             if p.alive:
@@ -307,11 +307,11 @@ class ParticleSampler:
             iteration += 1
             n_alive = sum(1 for p in particles if p.alive)
             if n_alive == 0:
-                logger.info("All particles dead, stopping")
+                # logger.info("All particles dead, stopping")
                 break
 
             if n_alive == 1:
-                logger.info("Only 1 particle alive, generating remaining...")
+                # logger.info("Only 1 particle alive, generating remaining...")
                 alive_p = next(p for p in particles if p.alive)
 
                 remaining_steps = self.max_steps - alive_p.current_step
@@ -368,7 +368,7 @@ class ParticleSampler:
                 if new_particles:
                     dead_particles = [p for p in particles if not p.alive]
                     particles = new_particles + dead_particles
-                    logger.info(f"  Resampled {len(new_particles)} particles\n")
+                    # logger.info(f"  Resampled {len(new_particles)} particles\n")
 
             particles = self._generate_one_step_batch(particles)
             particles = self._score_particles(particles, query)
