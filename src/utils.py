@@ -1,5 +1,6 @@
 import re
 import logging
+import numpy as np
 
 from typing import Optional
 from math_verify import parse, verify
