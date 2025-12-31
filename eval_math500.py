@@ -1,19 +1,9 @@
-"""
-Evaluation script for PRM-based Particle Sampling on MATH-500 benchmark
-(vLLM direct mode - no server)
-
-GPU Layout (dùng device parameter):
-- PRM: GPU 0,1 với tp=2, device="cuda:0"
-- LLM: GPU 2,3 với tp=2, device="cuda:2"
-"""
 import argparse
-import json
 import logging
 from typing import Optional
 
-from tqdm import tqdm
-
-from particle_sampler import ParticleSampler, extract_boxed_answer
+from src import ParticleSampler, PRMScorer, LogProbScorer
+from src.evaluator import evaluate_math500, print_evaluation_summary
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,175 +12,125 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def verify_answer(response: str, ground_truth: str, use_math_verify: bool = True):
-    """Verify answer using math_verify or simple matching"""
-    if use_math_verify:
-        try:
-            from math_verify import parse, verify
-            from math_verify.parser import ExprExtractionConfig, LatexExtractionConfig
-            
-            gold_parsed = parse(
-                f"\\boxed{{{ground_truth}}}", 
-                extraction_config=[LatexExtractionConfig()]
-            )
-            pred_parsed = parse(
-                response, 
-                extraction_config=[ExprExtractionConfig(), LatexExtractionConfig()]
-            )
-            return verify(gold_parsed, pred_parsed)
-        except Exception:
-            pass
-    
-    # Fallback: simple string matching
-    pred_answer = extract_boxed_answer(response)
-    if pred_answer is None:
-        return False
-    return pred_answer.strip() == ground_truth.strip()
-
-
-def evaluate_math500(
+def run_evaluation(
     model_path: str = "Qwen/Qwen2.5-7B",
-    prm_model_path: str = "Qwen/Qwen2.5-Math-PRM-7B",
+    prm_model_path: Optional[str] = None,
     n_particles: int = 8,
     max_steps: int = 20,
     max_tokens_per_step: int = 256,
     temperature: float = 0.7,
     num_samples: Optional[int] = None,
     output_file: str = "math500_results.jsonl",
+    dataset_path: str = "data/math500.json",
     gpu_memory_utilization: float = 0.9,
     tensor_parallel_size: int = 2,
+    scorer_type: str = "prm",    # prm or logprob
     prm_device: str = "cuda:0",  # PRM dùng GPU 0,1
     llm_device: str = "cuda:2",  # LLM dùng GPU 2,3
+
     # ESS params
     alpha: float = 0.5,
     beta: float = 1.0,
     rho: float = 0.5,
+    # LogProb scorer params
+    logprob_normalize: bool = True,
 ):
-    """Chạy evaluation trên MATH-500 benchmark"""
-    
-    # Check math_verify
-    try:
-        from math_verify import parse, verify
-        use_math_verify = True
-        logger.info("Using math_verify for evaluation")
-    except ImportError:
-        use_math_verify = False
-        logger.warning("math_verify not installed. Using simple string matching.")
-        logger.info("Install with: pip install math-verify")
-    
-    # Load MATH-500 dataset from local JSON
-    logger.info("Loading MATH-500 dataset...")
-    math500_path = "/home/anhld48/Working/icml/sampling_tts/persistent-sampling/data/math500.json"
-    with open(math500_path, "r") as f:
-        dataset = json.load(f)
-    
-    if num_samples is not None:
-        dataset = dataset[:min(num_samples, len(dataset))]
-    
-    logger.info(f"Total samples: {len(dataset)}")
-    
+    if scorer_type == "prm":
+        scorer = PRMScorer(
+            model_name=prm_model_path,
+            device=prm_device,
+            tensor_parallel_size=tensor_parallel_size,
+            gpu_memory_utilization=gpu_memory_utilization,
+        )
+        scorer_name = f"PRM ({prm_model_path})"
+        enable_logprobs = False
+
+    elif scorer_type == "logprob":
+        scorer = LogProbScorer(
+            normalize=logprob_normalize,
+            use_negative=False,
+        )
+        scorer_name = f"LogProb (normalize={logprob_normalize})"
+        enable_logprobs = True
+
+    else:
+        raise ValueError(f"Unknown scorer_type: {scorer_type}. Use 'prm' or 'logprob'")
+
     # Initialize sampler
     logger.info(f"Loading model: {model_path}")
-    logger.info(f"Loading PRM: {prm_model_path}")
     logger.info(f"Config: n_particles={n_particles}, max_steps={max_steps}, "
                 f"alpha={alpha}, beta={beta}, rho={rho}")
-    logger.info(f"GPU config: prm_device={prm_device}, llm_device={llm_device}, tp={tensor_parallel_size}, mem={gpu_memory_utilization}")
-    
+    logger.info(f"GPU config: llm_device={llm_device}, tp={tensor_parallel_size}, mem={gpu_memory_utilization}")
+
     sampler = ParticleSampler(
         model_path=model_path,
-        prm_model_path=prm_model_path,
+        scorer=scorer,
         n_particles=n_particles,
         max_steps=max_steps,
         max_tokens_per_step=max_tokens_per_step,
         temperature=temperature,
         gpu_memory_utilization=gpu_memory_utilization,
         tensor_parallel_size=tensor_parallel_size,
-        prm_device=prm_device,
-        llm_device=llm_device,
+        device=llm_device,
         alpha=alpha,
         beta=beta,
         rho=rho,
+        enable_logprobs=enable_logprobs,
     )
-    
-    correct = 0
-    total = 0
-    
-    with open(output_file, "w") as f:
-        for idx, sample in enumerate(tqdm(dataset, desc="Evaluating")):
-            problem = sample["problem"]
-            ground_truth = sample["answer"]
-            
-            # Format prompt
-            prompt, query = sampler.format_prompt(problem)
-            
-            # Generate response
-            result_dict = sampler.sample(prompt, query)
-            response = result_dict["response"]
-            particles_info = result_dict["particles"]
-            resample_count = result_dict.get("resample_count", 0)
-            
-            # Verify
-            is_correct = verify_answer(response, ground_truth, use_math_verify)
-            
-            if is_correct:
-                correct += 1
-            total += 1
-            
-            pred_answer = extract_boxed_answer(response)
-            
-            result = {
-                "idx": idx,
-                "problem": problem,
-                "ground_truth": ground_truth,
-                "response": response,
-                "pred_answer": pred_answer if pred_answer else "",
-                "is_correct": is_correct,
-                "particles": particles_info,
-                "resample_count": resample_count,
-            }
-            
-            # Save incrementally
-            f.write(json.dumps(result, ensure_ascii=False) + "\n")
-            f.flush()
-            
-            if (idx + 1) % 10 == 0:
-                acc = correct / total * 100
-                logger.info(f"\n[{idx+1}/{len(dataset)}] Accuracy: {acc:.2f}% ({correct}/{total})")
-    
-    # Final results
-    final_acc = correct / total * 100
-    print("\n" + "=" * 60)
-    print("MATH-500 Evaluation Results (vLLM Direct Mode)")
-    print("=" * 60)
-    print(f"Model: {model_path}")
-    print(f"PRM: {prm_model_path}")
-    print(f"N particles: {n_particles}")
-    print(f"Max steps: {max_steps}")
-    print(f"Alpha: {alpha}, Beta: {beta}, Rho: {rho}")
-    print(f"Temperature: {temperature}")
-    print("-" * 60)
-    print(f"Total: {total}")
-    print(f"Correct: {correct}")
-    print(f"Accuracy: {final_acc:.2f}%")
-    print("=" * 60)
-    print(f"Results saved to: {output_file}")
-    
-    return final_acc
+
+    # Run evaluation
+    accuracy = evaluate_math500(
+        sampler=sampler,
+        dataset_path=dataset_path,
+        num_samples=num_samples,
+        output_file=output_file,
+        use_math_verify=True,
+    )
+
+    # Print summary
+    print_evaluation_summary(
+        model_path=model_path,
+        scorer_name=scorer_name,
+        n_particles=n_particles,
+        max_steps=max_steps,
+        alpha=alpha,
+        beta=beta,
+        rho=rho,
+        temperature=temperature,
+        accuracy=accuracy,
+        output_file=output_file,
+    )
+
+    return accuracy
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="vLLM PRM Particle Sampling Evaluation on MATH-500"
+        description="Particle Sampling Evaluation on MATH-500 with Configurable Scorers"
     )
     parser.add_argument(
-        "--model_path", type=str, 
+        "--model_path", type=str,
         default="Qwen/Qwen2.5-7B",
-        help="Model path"
+        help="LLM model path"
+    )
+    parser.add_argument(
+        "--scorer_type", type=str, default="prm",
+        choices=["prm", "logprob"],
+        help="Scorer type: 'prm' (PRM-based) or 'logprob' (log probability)"
     )
     parser.add_argument(
         "--prm_model_path", type=str,
-        default="Qwen/Qwen2.5-Math-PRM-7B",
-        help="PRM model path"
+        default=None,
+        help="PRM model path (required if --scorer_type=prm)"
+    )
+    parser.add_argument(
+        "--logprob_normalize", action="store_true",
+        help="Normalize log probs by sequence length (for logprob scorer)"
+    )
+    parser.add_argument(
+        "--dataset_path", type=str,
+        default="/home/anhld48/Working/icml/sampling_tts/persistent-sampling/data/math500.json",
+        help="Path to MATH-500 dataset"
     )
     parser.add_argument(
         "--n_particles", type=int, default=8,
@@ -247,16 +187,17 @@ if __name__ == "__main__":
     )
     
     args = parser.parse_args()
-    
-    evaluate_math500(
+    run_evaluation(
         model_path=args.model_path,
         prm_model_path=args.prm_model_path,
+        scorer_type=args.scorer_type,
         n_particles=args.n_particles,
         max_steps=args.max_steps,
         max_tokens_per_step=args.max_tokens_per_step,
         temperature=args.temperature,
         num_samples=args.num_samples,
         output_file=args.output_file,
+        dataset_path=args.dataset_path,
         gpu_memory_utilization=args.gpu_mem,
         tensor_parallel_size=args.tp,
         prm_device=args.prm_device,
@@ -264,13 +205,16 @@ if __name__ == "__main__":
         alpha=args.alpha,
         beta=args.beta,
         rho=args.rho,
+        logprob_normalize=args.logprob_normalize,
     )
 
 
 '''
-# GPU Layout: PRM on GPU 0,1 | LLM on GPU 2,3
+Example Usage:
 
+# 1. Using PRM Scorer (GPU 0,1 for PRM, GPU 2,3 for LLM)
 python eval_math500.py \
+    --scorer_type prm \
     --model_path Qwen/Qwen2.5-7B-Instruct \
     --prm_model_path Qwen/Qwen2.5-Math-PRM-7B \
     --n_particles 8 \
@@ -279,10 +223,38 @@ python eval_math500.py \
     --temperature 0.7 \
     --output_file math500_prm_results.jsonl \
     --prm_device cuda:0 \
-    --llm_device cuda:1 \
-    --tp 1 \
+    --llm_device cuda:2 \
+    --tp 2 \
     --gpu_mem 0.9 \
-    --alpha 0.2 \
-    --beta 10.0 \
-    --rho 1
+    --alpha 0.5 \
+    --beta 1.0 \
+    --rho 0.5
+
+# 2. Using LogProb Scorer (only LLM on GPU 0,1)
+python eval_math500.py \
+    --scorer_type logprob \
+    --model_path Qwen/Qwen2.5-7B-Instruct \
+    --n_particles 8 \
+    --max_steps 25 \
+    --max_tokens_per_step 128 \
+    --temperature 0.7 \
+    --output_file math500_logprob_results.jsonl \
+    --llm_device cuda:0 \
+    --tp 2 \
+    --gpu_mem 0.9 \
+    --alpha 0.5 \
+    --beta 1.0 \
+    --rho 0.5 \
+    --logprob_normalize
+
+# 3. Quick test with LogProb scorer (single GPU)
+python eval_math500.py \
+    --scorer_type logprob \
+    --model_path Qwen/Qwen2.5-7B-Instruct \
+    --n_particles 4 \
+    --max_steps 10 \
+    --num_samples 10 \
+    --llm_device cuda:0 \
+    --tp 1 \
+    --logprob_normalize
 '''
