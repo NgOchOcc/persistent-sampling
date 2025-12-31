@@ -5,7 +5,7 @@ from collections import Counter
 
 from .models import Particle, Snapshot
 from .scorers import BaseScorer
-from .utils import extract_boxed_answer
+from .evaluator import extract_boxed_answer
 
 logger = logging.getLogger(__name__)
 
