@@ -5,7 +5,7 @@ from collections import Counter
 
 from src.models import Particle, Snapshot
 from src.scorers import BaseScorer
-from src.utils import extract_boxed_answer
+from src.utils import extract_boxed_answer, AnnealingSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -151,10 +151,9 @@ class ParticleSampler:
 
         scores = np.array([p.current_score for p in alive_particles])
         s = scores - scores.max()
-        w = np.exp(self.beta * s)
+        w = np.exp(AnnealingSchedule.linear(particles[0].current_step) * s)
         w = w / w.sum()
         ess = 1.0 / np.sum(w ** 2)
-
         return ess, w.tolist()
 
     def _check_resample_condition(self, particles: List[Particle]) -> bool:

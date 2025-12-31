@@ -13,3 +13,7 @@ python eval_math500.py \
     --beta 1.0 \
     --rho 0.5 \
     --logprob_normalize
+
+
+### Acc
+### Math 500: 407/500 = 81.40%
