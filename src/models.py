@@ -11,6 +11,7 @@ class Particle:
     current_score: float = 0.5
     prm_raw: float = 0.5
     log_prob: float = 0.0  # Cumulative log probability
+    num_generated_tokens: int = 0  # Number of tokens generated (excluding prompt)
 
     def copy(self, new_particle_id: Optional[int] = None):
         return Particle(
@@ -20,7 +21,8 @@ class Particle:
             alive=self.alive,
             current_score=self.current_score,
             prm_raw=self.prm_raw,
-            log_prob=self.log_prob
+            log_prob=self.log_prob,
+            num_generated_tokens=self.num_generated_tokens
         )
 
 
@@ -32,6 +34,7 @@ class Snapshot:
     score: float
     alive: bool = True
     log_prob: float = 0.0
+    num_generated_tokens: int = 0
 
     def to_particle(self, new_particle_id: int):
         return Particle(
@@ -40,5 +43,6 @@ class Snapshot:
             current_step=self.step,
             alive=self.alive,
             current_score=self.score,
-            log_prob=self.log_prob
+            log_prob=self.log_prob,
+            num_generated_tokens=self.num_generated_tokens
         )

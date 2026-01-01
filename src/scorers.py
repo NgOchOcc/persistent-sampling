@@ -111,9 +111,11 @@ class LogProbScorer(BaseScorer):
         self,
         normalize: bool = True,
         use_negative: bool = False,
+        temperature: float = 1.0,
     ):
         self.normalize = normalize
         self.use_negative = use_negative
+        self.temperature = temperature
 
     def score_batch(
         self,
@@ -123,14 +125,19 @@ class LogProbScorer(BaseScorer):
         sequence_lengths: Optional[List[int]] = None,
         **kwargs
     ) -> List[float]:
+        if log_probs is None:
+            return [0.0] * len(responses)
+
         scores = []
         for i, log_prob in enumerate(log_probs):
-            score = log_prob
+            # Tính trung bình cộng log_prob của tất cả các token từ đầu đến hiện tại
+            if sequence_lengths is not None and sequence_lengths[i] > 0:
+                mean_log_prob = log_prob / sequence_lengths[i]
+            else:
+                mean_log_prob = log_prob
 
-            if self.normalize and sequence_lengths is not None:
-                seq_len = sequence_lengths[i]
-                if seq_len > 0:
-                    score = score / seq_len
+            # Áp dụng temperature và lấy e mũ
+            score = np.exp(mean_log_prob / self.temperature)
 
             if self.use_negative:
                 score = -score

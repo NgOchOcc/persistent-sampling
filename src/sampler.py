@@ -89,7 +89,9 @@ class ParticleSampler:
 
             output = outputs[alive_idx]
             new_token_ids = output.outputs[0].token_ids
+            num_new_tokens = len(new_token_ids)
             p.token_ids = p.token_ids + list(new_token_ids)
+            p.num_generated_tokens += num_new_tokens
             p.current_step += 1
             if self.enable_logprobs and output.outputs[0].logprobs:
                 step_log_prob = 0.0
@@ -97,7 +99,7 @@ class ParticleSampler:
                     if token_logprob_dict:
                         for token_id, logprob_obj in token_logprob_dict.items():
                             step_log_prob += logprob_obj.logprob
-                            break 
+                            break
                 p.log_prob += step_log_prob
 
             hit_eos = output.outputs[0].finish_reason == "stop"
@@ -118,7 +120,7 @@ class ParticleSampler:
         scorer_kwargs = {}
         if self.enable_logprobs:
             scorer_kwargs['log_probs'] = [p.log_prob for p in alive_particles]
-            scorer_kwargs['sequence_lengths'] = [len(p.token_ids) for p in alive_particles]
+            scorer_kwargs['sequence_lengths'] = [p.num_generated_tokens for p in alive_particles]
 
         base_scores = self.scorer.score_batch(queries, responses, **scorer_kwargs)
         alive_idx = 0
@@ -197,7 +199,8 @@ class ParticleSampler:
                         step=s.step,
                         score=s.score,
                         alive=s.alive,
-                        log_prob=s.log_prob
+                        log_prob=s.log_prob,
+                        num_generated_tokens=s.num_generated_tokens
                     ))
 
             new_particles.append(Particle(
@@ -206,7 +209,8 @@ class ParticleSampler:
                 current_step=selected_step,
                 alive=selected_snap.alive,
                 current_score=selected_snap.score,
-                log_prob=selected_snap.log_prob
+                log_prob=selected_snap.log_prob,
+                num_generated_tokens=selected_snap.num_generated_tokens
             ))
 
         # logger.info(f"  Created {len(new_particles)} particles, pool size: {len(new_pool)}")
@@ -249,7 +253,7 @@ class ParticleSampler:
         best_idx = int(np.argmax(scores))
         return responses[best_idx], answers[best_idx]
 
-    def sample(self, prompt: str, query: str) -> dict:
+    def sample(self, prompt: str, query: str, ground_truth: str) -> dict:
         init_token_ids = self.tokenizer.encode(prompt)
         snapshot_pool: List[Snapshot] = []
         particles = []
@@ -276,14 +280,15 @@ class ParticleSampler:
                             log_prob += logprob_obj.logprob
                             break
 
-            logger.info(f"  Particle {particle_id}: {len(new_token_ids)} tokens, alive={not hit_eos}")
+            # logger.info(f"  Particle {particle_id}: {len(new_token_ids)} tokens, alive={not hit_eos}")
             particles.append(Particle(
                 particle_id=particle_id,
                 token_ids=full_token_ids,
                 current_step=1,
                 alive=not hit_eos,
                 current_score=0.5,
-                log_prob=log_prob
+                log_prob=log_prob,
+                num_generated_tokens=len(new_token_ids)
             ))
 
         n_alive_init = sum(1 for p in particles if p.alive)
@@ -297,7 +302,8 @@ class ParticleSampler:
                     step=p.current_step,
                     score=p.current_score,
                     alive=p.alive,
-                    log_prob=p.log_prob
+                    log_prob=p.log_prob,
+                    num_generated_tokens=p.num_generated_tokens
                 ))
 
         iteration = 0
@@ -329,7 +335,7 @@ class ParticleSampler:
                 )
                 new_tokens = list(outputs[0].outputs[0].token_ids)
                 alive_p.token_ids.extend(new_tokens)
-                # Update log prob
+                alive_p.num_generated_tokens += len(new_tokens)
                 if self.enable_logprobs and outputs[0].outputs[0].logprobs:
                     for token_logprob_dict in outputs[0].outputs[0].logprobs:
                         if token_logprob_dict:
@@ -347,17 +353,17 @@ class ParticleSampler:
             scores = [p.current_score for p in alive_particles]
             ess, _ = self._compute_ess(particles)
 
-            logger.info(
-                f"Iter {iteration}: alive={n_alive}, "
-                f"steps={steps}, "
-                f"scores={[f'{s:.3f}' for s in scores]}, "
-                f"ESS={ess:.2f}/{n_alive}, "
-                f"pool={len(snapshot_pool)}"
-            )
+            # logger.info(
+            #     f"Iter {iteration}: alive={n_alive}, "
+            #     f"steps={steps}, "
+            #     f"scores={[f'{s:.3f}' for s in scores]}, "
+            #     f"ESS={ess:.2f}/{n_alive}, "
+            #     f"pool={len(snapshot_pool)}"
+            # )
 
             if self._check_resample_condition(particles):
                 threshold = self.rho * n_alive
-                logger.info(f"\n>>> RESAMPLE triggered (ESS={ess:.2f} < {threshold:.2f})")
+                # logger.info(f"\n>>> RESAMPLE triggered (ESS={ess:.2f} < {threshold:.2f})")
                 resample_count += 1
 
                 new_particles, snapshot_pool = self._resample(
@@ -380,7 +386,8 @@ class ParticleSampler:
                         step=p.current_step,
                         score=p.current_score,
                         alive=p.alive,
-                        log_prob=p.log_prob
+                        log_prob=p.log_prob,
+                        num_generated_tokens=p.num_generated_tokens
                     ))
 
         all_particles_info = []
@@ -400,6 +407,7 @@ class ParticleSampler:
         response, answer = self._majority_vote(particles)
 
         logger.info(f"Final answer: {answer}")
+        logger.info(f"Ground truth: {ground_truth}")
         logger.info(f"Total resamples: {resample_count}")
 
         return {
