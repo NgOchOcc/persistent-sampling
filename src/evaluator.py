@@ -36,7 +36,7 @@ def evaluate_math500(
             ground_truth = sample["answer"]
 
             prompt, query = sampler.format_prompt(problem)
-            result_dict = sampler.sample(prompt, query)
+            result_dict = sampler.sample(prompt, query, ground_truth)
             response = result_dict["response"]
             particles_info = result_dict["particles"]
             resample_count = result_dict.get("resample_count", 0)
