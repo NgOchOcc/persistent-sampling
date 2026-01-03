@@ -1,15 +1,36 @@
-torch==2.9.0
+# Core dependencies
+torch>=2.0.0
 transformers>=4.40.0
 numpy>=1.24.0
 tqdm>=4.65.0
 pyyaml>=6.0
+
+# vLLM for inference
+vllm>=0.4.0
+
+# Config validation
+pydantic>=2.0.0
+
+# Math verification (Python >= 3.10)
+# Install with: pip install math-verify[antlr4_13_2]
+math-verify[antlr4_13_2]
+
+# Testing
+pytest>=7.0.0
+pytest-cov>=4.0.0
+
+# Data processing
 pandas>=2.0.0
 datasets>=2.14.0
-scikit-learn>=1.3.0
+
+# Scientific computing
+scipy>=1.10.0
+
+# Visualization (optional)
 matplotlib>=3.7.0
 seaborn>=0.12.0
-textwrap
-pylatexenc
-sympy
-math_verify
-vllm
+
+# Utilities
+rich>=13.0.0
+pylatexenc>=2.10
+sympy>=1.12

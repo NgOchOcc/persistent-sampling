@@ -1,0 +1,187 @@
+# =============================================================================
+# Persistent Sampling Configuration
+# =============================================================================
+# This config drives everything - NO hard-coded constants in code.
+# Override any value via CLI: --ps.resample.method=systematic
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# System Settings
+# -----------------------------------------------------------------------------
+system:
+  seed: 42
+  log_level: INFO  # DEBUG, INFO, WARNING, ERROR
+  device: auto     # auto, cuda, cpu
+
+# -----------------------------------------------------------------------------
+# Models Configuration
+# -----------------------------------------------------------------------------
+models:
+  # Generator LLM
+  generator:
+    model_path: "Qwen/Qwen2.5-Math-1.5B-Instruct"
+    max_model_len: 4096
+    gpu_memory_utilization: 0.85
+    tensor_parallel_size: 1
+    dtype: auto       # auto, float16, bfloat16
+    trust_remote_code: true
+  
+  # Process Reward Model (optional, for PRM-based scoring)
+  prm:
+    enabled: false
+    model_path: "Qwen/Qwen2.5-Math-PRM-7B"
+    max_model_len: 4096
+    gpu_memory_utilization: 0.85
+    tensor_parallel_size: 1
+    dtype: auto
+    trust_remote_code: true
+
+# -----------------------------------------------------------------------------
+# Generation Settings
+# -----------------------------------------------------------------------------
+generation:
+  n_particles: 8          # M: number of particles
+  max_steps: 20           # T: max generation steps per particle
+  max_tokens_per_step: 128  # max new tokens per step
+  min_tokens_per_step: 1    # min tokens before early stop check
+  temperature: 0.7         # sampling temperature
+  top_p: 0.95              # nucleus sampling
+  stop_tokens: []          # additional stop sequences
+  step_boundary: newline   # how to define steps: newline, sentence, fixed
+  fixed_step_tokens: 64    # if step_boundary=fixed
+  include_logprobs: true   # extract log probabilities
+
+# -----------------------------------------------------------------------------
+# Scoring Configuration
+# -----------------------------------------------------------------------------
+scoring:
+  # Score function type
+  type: logprob_power   # logprob_power, logprob_avg, prm_reward, hybrid_prm_logprob
+  
+  # Score function parameters
+  params:
+    tau: 1.0           # temperature for logprob_power: score = exp(logprob / tau)
+    alpha: 0.5         # weight for hybrid: alpha * prm + (1-alpha) * logprob
+    min_score: 1e-30   # minimum score to avoid numerical issues
+    max_score: 1.0     # maximum score clipping
+  
+  # Length prior (optional regularization)
+  length_prior:
+    type: none         # none, poisson, geometric, lognormal, linear_penalty
+    lambda_poisson: 10.0
+    p_geometric: 0.1
+    mu_lognormal: 2.0
+    sigma_lognormal: 0.5
+    penalty_linear: 0.01
+
+# -----------------------------------------------------------------------------
+# Persistent Sampling Algorithm Settings
+# -----------------------------------------------------------------------------
+ps:
+  # Temperature / Inverse Temperature Schedule
+  temperature_schedule:
+    mode: adaptive_ess    # adaptive_ess, fixed_linear, fixed_cosine
+    beta_min: 0.0          # starting inverse temperature
+    beta_max: 1.0          # final inverse temperature
+    target_ess: 0.5        # target ESS ratio for adaptive mode (fraction of N)
+    bisection_tol: 1e-4    # tolerance for bisection search
+    bisection_max_iter: 50  # max iterations for bisection
+  
+  # Resampling Configuration
+  resample:
+    method: topN           # topN, systematic, multinomial
+    alpha_start: 0.5       # ESS threshold at step 0 (fraction of M)
+    alpha_end: 0.8         # ESS threshold at final step
+    alpha_schedule: linear  # linear, constant
+  
+  # Pool Settings
+  snapshot_pool:
+    enabled: true          # use persistent snapshot pool
+    max_size: 1000         # max snapshots to keep
+    prune_strategy: oldest  # oldest, lowest_score
+  
+  # Z-hat estimation
+  z_estimation:
+    method: balance_heuristic  # balance_heuristic (Eq. 17 in paper)
+    log_space: true            # compute in log space for numerical stability
+
+# -----------------------------------------------------------------------------
+# Evaluation Settings
+# -----------------------------------------------------------------------------
+evaluation:
+  # Dataset
+  dataset: math500         # math500, gsm8k, custom
+  dataset_path: null       # custom dataset path (JSONL)
+  
+  # Output
+  output_dir: ./outputs
+  output_format: jsonl     # jsonl, json
+  save_particles: false    # save all particle traces
+  save_intermediate: true  # save intermediate results
+  
+  # Answer verification
+  verifier: math_verify    # math_verify, exact_match, contains
+  extract_answer: boxed    # boxed, last_number, regex
+  
+  # Progress
+  checkpoint_every: 10     # save checkpoint every N samples
+  resume_from: null        # resume from checkpoint file
+
+# -----------------------------------------------------------------------------
+# Tuning Configuration
+# -----------------------------------------------------------------------------
+tuning:
+  enabled: false
+  method: grid             # grid, random, bayesian
+  n_trials: 50             # number of trials for random/bayesian
+  metric: accuracy         # metric to optimize
+  
+  # Parameter search space (for grid/random search)
+  search_space:
+    ps.resample.alpha_start: [0.3, 0.5, 0.7]
+    ps.resample.alpha_end: [0.6, 0.8, 0.9]
+    ps.temperature_schedule.target_ess: [0.3, 0.5, 0.7]
+    scoring.params.tau: [0.5, 1.0, 2.0]
+    generation.temperature: [0.5, 0.7, 0.9]
+  
+  # Validation
+  validation_samples: 50   # samples for validation during tuning
+  validation_seed: 42
+
+# -----------------------------------------------------------------------------
+# Smoke Test / Debug Configuration
+# -----------------------------------------------------------------------------
+smoke_test:
+  enabled: false
+  n_particles: 2
+  max_steps: 3
+  n_samples: 2
+  model_path: null         # null = use default, or specify tiny model
+
+# -----------------------------------------------------------------------------
+# Logging & Monitoring
+# -----------------------------------------------------------------------------
+logging:
+  # Console output
+  console_level: INFO
+  console_format: "%(asctime)s [%(levelname)s] %(message)s"
+  
+  # File logging
+  file_enabled: true
+  file_path: ./logs/ps.log
+  file_level: DEBUG
+  
+  # Metrics logging
+  log_ess: true            # log ESS at each step
+  log_betas: true          # log beta schedule
+  log_weights: false       # log weight distributions (verbose)
+  log_timing: true         # log timing statistics
+
+# -----------------------------------------------------------------------------
+# Performance Optimization
+# -----------------------------------------------------------------------------
+performance:
+  batch_size: null         # null = auto (all particles at once)
+  use_cuda_graphs: false   # experimental: CUDA graph optimization
+  pin_memory: true         # pin tensors in memory
+  num_workers: 0           # dataloader workers
